@@ -1,0 +1,196 @@
+<!doctype html>
+<html>
+<head>
+
+    <link rel="stylesheet" href="/static/components/jquery-ui/themes/smoothness/jquery-ui.min.css" type="text/css" />
+    <link rel="stylesheet" href="/static/style/style.min.css" type="text/css" />
+    <link rel="stylesheet" href="/static/custom/custom.css" type="text/css" />
+    <link rel="stylesheet" href="/static/components/bootstrap-tour/build/css/bootstrap-tour.min.css" type="text/css" />
+    <link rel="stylesheet" href="/static/notebook/css/override.css" type="text/css" />
+    <!-- <link rel="stylesheet" href="/static/" type="text/css" /> -->
+    <!-- <link rel="stylesheet" href="/static/" type="text/css" /> -->
+    <!-- <link rel="stylesheet" href="/static/" type="text/css" /> -->
+
+
+<script src="/static/mathjax/MathJax.js?config=TeX-AMS_HTML-full&delayStartupUntil=configured">
+</script>
+<!-- <script> -->
+<!--   window.mathjax_url = ""; -->
+<!-- </script> -->
+
+<script src="/static/components/requirejs/require.js" type="text/javascript" charset="utf-8"></script>
+    <script type="text/javascript">
+      require.config({
+          baseUrl: '/static/',
+          paths: {
+            nbextensions : '/nbextensions',
+            underscore : 'components/underscore/underscore-min',
+            backbone : 'components/backbone/backbone-min',
+            jquery: 'components/jquery/jquery.min',
+            bootstrap: 'components/bootstrap/js/bootstrap.min',
+            bootstraptour: 'components/bootstrap-tour/build/js/bootstrap-tour.min',
+            dateformat: 'dateformat/date.format',
+            jqueryui: 'components/jquery-ui/ui/minified/jquery-ui.min',
+            highlight: 'components/highlight.js/build/highlight.pack',
+            moment: "components/moment/moment",
+          },
+          shim: {
+            underscore: {
+              exports: '_'
+            },
+            backbone: {
+              deps: ["underscore", "jquery"],
+              exports: "Backbone"
+            },
+            bootstrap: {
+              deps: ["jquery"],
+              exports: "bootstrap"
+            },
+            bootstraptour: {
+              deps: ["bootstrap"],
+              exports: "Tour"
+            },
+            dateformat: {
+              exports: "dateFormat"
+            },
+            jqueryui: {
+              deps: ["jquery"],
+              exports: "$"
+            },
+            highlight: {
+              exports: "hljs"
+            },
+          }
+      });
+    </script>
+
+<!-- Codemirror - does not use requirejs -->
+
+<script src="/static/components/codemirror/lib/codemirror.js" charset="utf-8"></script>
+<script>
+    CodeMirror.modeURL = "/static/components/codemirror/mode/%N/%N.js";
+</script>
+<script src="/static/components/codemirror/addon/mode/loadmode.js" charset="utf-8"></script>
+<script src="/static/components/codemirror/addon/mode/multiplex.js" charset="utf-8"></script>
+<script src="/static/components/codemirror/addon/mode/overlay.js" charset="utf-8"></script>
+<script src="/static/components/codemirror/addon/edit/matchbrackets.js" charset="utf-8"></script>
+<script src="/static/components/codemirror/addon/edit/closebrackets.js" charset="utf-8"></script>
+<script src="/static/components/codemirror/addon/comment/comment.js" charset="utf-8"></script>
+<script src="/static/components/codemirror/mode/htmlmixed/htmlmixed.js" charset="utf-8"></script>
+<script src="/static/components/codemirror/mode/xml/xml.js" charset="utf-8"></script>
+<script src="/static/components/codemirror/mode/javascript/javascript.js" charset="utf-8"></script>
+<script src="/static/components/codemirror/mode/css/css.js" charset="utf-8"></script>
+<script src="/static/components/codemirror/mode/rst/rst.js" charset="utf-8"></script>
+<script src="/static/components/codemirror/mode/markdown/markdown.js" charset="utf-8"></script>
+<script src="/static/components/codemirror/mode/python/python.js" charset="utf-8"></script>
+<script src="/static/notebook/js/codemirror-ipython.js" charset="utf-8"></script>
+<script src="/static/notebook/js/codemirror-ipythongfm.js" charset="utf-8"></script>
+
+</head>
+<body>
+
+<div id="widgets"> </div>
+
+<div id="output"> </div>
+
+<script>
+
+var last_id = "";
+var clear_queued = false;
+
+console_log = function(arg) {
+  $("#output").append("<p>" + arg + "</p>");
+}
+
+function execute(code) {
+  var res = kk.execute(code, {
+    iopub : {
+      output : function(msg) {
+        // see static/notebook/js/outputarea.js:handle_output
+        if (msg.header.msg_type === "stream") {
+          $("#output").append("<p>" + msg.content.data + "</p>");
+        } else if (msg.header.msg_type === "display_data") {
+          $("#output").append("<p>" + msg.content.data + "</p>");
+        } else if (msg.header.msg_type === "execute_result") {
+          if (msg.content.data["text/plain"] !== undefined) {
+            $("#output").append("<p><strong>" + msg.content.data["text/plain"] + "</strong></p>");
+          }
+        } else if (msg.header.msg_type === "error") {
+          $("#output").append("<p style='color:red'>" + msg.content.ename + ": " +msg.content.evalue  + "</p>");
+        } else {
+          console.log("unhandled output message", msg);
+        }
+      },
+      clear_output: function(msg) {
+        if (msg.content.wait) {
+          if (clear_queued) {
+            $("#output").html("");
+            $("#widgets").html("");
+          }
+          clear_queued = true;
+        } else {
+          $("#output").html("");
+          $("#widgets").html("");
+        }
+      }
+    }
+  } , {silent: false, store_history: true});
+  last_id = res;
+}
+
+function js_execute(code) {
+  $("#output").append("<p><strong>" + eval(code) + "</strong></p>");
+}
+
+require(['base/js/events',
+         'services/kernels/js/kernel',
+         'notebook/js/keyboardmanager',],
+function(events_, kernel_, keyboardmanager_) {
+  // leak variables into global scope
+  events = events_;
+  kernel = kernel_;
+  keyboardmanager = keyboardmanager_;
+
+  var keyboard_manager = new keyboardmanager.KeyboardManager({
+    pager: null,
+    events: events});
+
+  if (window.parent !== window) {
+    kernel_id = window.parent.IPython.notebook.session.kernel.kernel_id;
+  } else {
+    kernel_id = "a4142958-41ed-4fe3-bea7-2a9bbd4db6bc";
+  }
+
+  false_cell = {
+    widget_subarea: $("#widgets"), // jQuery object to div
+  };
+
+  false_notebook = {
+    events: events,
+    keyboard_manager: keyboard_manager,
+    get_msg_cell: function (msg_id) {
+      if (msg_id === last_id) {
+        return false_cell;
+      } else {
+        return null;
+      }
+    }
+  };
+
+  kk = new kernel.Kernel("/api/kernels", "ws://127.0.0.1:8888", false_notebook, "python2")
+  kk._kernel_started({id: kernel_id, name: "python2"});
+
+  events.one('status_idle.Kernel', function(evt, data) {
+    if (data.kernel === kk) {
+      if (window.parent !== window && window.parent._subframe_cb !== undefined) {
+        window.parent._subframe_cb(execute);
+      }
+      console.log = console_log;
+    }
+  });
+
+});
+
+</script>
+</body>
+</html>
